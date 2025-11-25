@@ -1,9 +1,10 @@
 #pragma once
 #include "targetver.h"
+#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #define _USE_MATH_DEFINES
 #pragma warning(push)
-#pragma warning(disable: 4178 4305 4309 4510 4996)
+#pragma warning(disable: 4178 4244 4305 4309 4510 4996)
 #include <windows.h>
 #include <stdint.h>
 #include <array>
@@ -26,19 +27,29 @@
 #include "callbacks.h"
 #include "log.h"
 #include "ModuleList.hpp"
+#include "Trampoline.h"
 #include <filesystem>
 #include <stacktrace>
 #include <shellapi.h>
 #include <ranges>
+#include <format>
+#include <hidusage.h>
 #pragma warning(pop)
 
 #ifndef CEXP
 #define CEXP extern "C" __declspec(dllexport)
 #endif
 
+#define force_return_address(addr) (*(uintptr_t*)(regs.esp - 4) = (addr))
+#define return_to(addr) do { force_return_address(addr); return; } while (0)
+#define WM_RAWINPUTMOUSE (WM_APP + 1000)
+
 float GetFOV(float f, float ar);
 float GetFOV2(float f, float ar);
 float AdjustFOV(float f, float ar, float base_ar = (4.0f / 3.0f));
+float CalculateWidescreenOffset(float fWidth, float fHeight, float fScaleToWidth = 640.0f, float fScaleToHeight = 480.0f, float fOffset = 0.0f, bool bScaleToActualRes = false);
+std::optional<float> ParseWidescreenHudOffset(std::string_view input);
+float ClampHudAspectRatio(float value, float screenAspect, float minAspect = 4.0f / 3.0f, float maxAspect = 32.0f / 9.0f);
 
 bool IsModuleUAL(HMODULE mod);
 bool IsUALPresent();
@@ -46,7 +57,6 @@ void CreateThreadAutoClose(LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwSt
 std::tuple<int32_t, int32_t> GetDesktopRes();
 void GetResolutionsList(std::vector<std::string>& list);
 uint32_t GetDesktopRefreshRate();
-std::string format(const char* fmt, ...);
 uint32_t crc32(uint32_t crc, const void* buf, size_t size);
 
 HICON CreateIconFromBMP(UCHAR* data);
@@ -83,6 +93,15 @@ std::array<uint8_t, sizeof(T)> to_bytes(const T& object)
     return bytes;
 }
 
+template<typename T, size_t N>
+auto to_bytes(const T(&arr)[N]) -> std::array<uint8_t, N - 1>
+{
+    std::array<uint8_t, N - 1> bytes;
+    const uint8_t* begin = reinterpret_cast<const uint8_t*>(arr);
+    std::copy(begin, begin + N - 1, std::begin(bytes));
+    return bytes;
+}
+
 template<typename T>
 T& from_bytes(const std::array<uint8_t, sizeof(T)>& bytes, T& object)
 {
@@ -106,9 +125,10 @@ template <size_t n>
 std::string pattern_str(const std::array<uint8_t, n> bytes)
 {
     std::string result;
+    result.reserve(n * 3);
     for (size_t i = 0; i < n; i++)
     {
-        result += format("%02X ", bytes[i]);
+        result += std::format("{:02X} ", bytes[i]);
     }
     return result;
 }
@@ -116,13 +136,21 @@ std::string pattern_str(const std::array<uint8_t, n> bytes)
 template <typename T>
 std::string pattern_str(T t)
 {
-    return std::string((std::is_same<T, char>::value ? format("%c ", t) : format("%02X ", t)));
+    if constexpr (std::is_same<T, char>::value)
+        return std::format("{} ", t);
+    else
+        return std::format("{:02X} ", t);
 }
 
 template <typename T, typename... Rest>
 std::string pattern_str(T t, Rest... rest)
 {
-    return std::string((std::is_same<T, char>::value ? format("%c ", t) : format("%02X ", t)) + pattern_str(rest...));
+    std::string prefix;
+    if constexpr (std::is_same<T, char>::value)
+        prefix = std::format("{} ", t);
+    else
+        prefix = std::format("{:02X} ", t);
+    return prefix + pattern_str(rest...);
 }
 
 template <size_t count = 1, typename... Args>
@@ -130,6 +158,22 @@ hook::pattern find_pattern(Args... args)
 {
     hook::pattern pattern;
     ((pattern = hook::pattern(args), !pattern.count_hint(count).empty()) || ...);
+    return pattern;
+}
+
+template <size_t count = 1, typename... Args>
+hook::pattern find_module_pattern(HMODULE hModule, Args... args)
+{
+    hook::pattern pattern;
+    ((pattern = hook::module_pattern(hModule, args), !pattern.count_hint(count).empty()) || ...);
+    return pattern;
+}
+
+template <size_t count = 1, typename... Args>
+hook::pattern find_range_pattern(uintptr_t range_start, size_t range_size, Args... args)
+{
+    hook::pattern pattern;
+    ((pattern = hook::range_pattern(range_start, range_size, args), !pattern.count_hint(count).empty()) || ...);
     return pattern;
 }
 
@@ -254,7 +298,7 @@ T GetThisModuleName()
     HMODULE hm = NULL;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&GetResolutionsList, &hm);
     const T moduleFileName = GetModulePath<T>(hm);
-    
+
     if constexpr (std::is_same_v<T, std::filesystem::path>)
         return moduleFileName.filename();
     else if constexpr (std::is_same_v<T, std::string>)
@@ -377,6 +421,14 @@ inline std::filesystem::path GetKnownFolderPath(REFKNOWNFOLDERID rfid, DWORD dwF
     return r;
 };
 
+template<typename... Ts>
+FARPROC FindProcAddress(HMODULE hModule, Ts... procNames)
+{
+    FARPROC result = nullptr;
+    ((result = ::GetProcAddress(hModule, procNames)) || ...);
+    return result;
+}
+
 class RegistryWrapper
 {
 private:
@@ -470,105 +522,103 @@ public:
             {
                 switch (*lpType)
                 {
-                case REG_BINARY:
-                {
-                    std::string str = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
-                    if (!str.empty())
+                    case REG_BINARY:
                     {
-                        std::istringstream input(str);
-                        std::string number;
-                        size_t i = 0;
-                        while (std::getline(input, number, ','))
+                        std::string str = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
+                        if (!str.empty())
                         {
-                            lpData[i] = (BYTE)std::stoul(number, nullptr, 16);
-                            ++i;
-                        }
-                        *lpcbData = i;
-                    }
-                    else
-                        RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "" : DefaultStrings[ValueName]);
-                    break;
-                }
-                case REG_DWORD:
-                {
-                    DWORD def = UINT_MAX;
-                    if (!DefaultStrings[ValueName].empty())
-                    {
-                        try
-                        {
-                            def = (DWORD)std::stoul(DefaultStrings[ValueName]);
-                        }
-                        catch (const std::invalid_argument&)
-                        {
-                            def = UINT_MAX;
-                        }
-                    }
-                    try
-                    {
-                        *(DWORD*)lpData = RegistryReader.ReadInteger(section, ValueName, def);
-                    }
-                    catch (const std::invalid_argument&)
-                    {
-                        *(DWORD*)lpData = UINT_MAX;
-                    }
-                    if (*(DWORD*)lpData == UINT_MAX)
-                    {
-                        RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "INSERTDWORDHERE" : DefaultStrings[ValueName]);
-                        *(DWORD*)lpData = 0;
-                    }
-                    *lpcbData = sizeof(DWORD);
-                    break;
-                }
-                case REG_MULTI_SZ: //not implemented
-                    break;
-                case REG_NONE:
-                {
-                    if (lpData != NULL)
-                    {
-                        *(bool*)lpData = RegistryReader.ReadBoolean("MAIN", ValueName, false);
-                        *lpcbData = sizeof(bool);
-                    }
-                    else
-                    {
-                        auto s = DefaultStrings.find(ValueName);
-                        if (s != DefaultStrings.end())
-                        {
-                            *lpcbData = s->second.size();
-                            *lpType = 1;
-                            return ERROR_SUCCESS;
+                            std::istringstream input(str);
+                            std::string number;
+                            size_t i = 0;
+                            while (std::getline(input, number, ','))
+                            {
+                                lpData[i] = (BYTE)std::stoul(number, nullptr, 16);
+                                ++i;
+                            }
+                            *lpcbData = i;
                         }
                         else
-                            return ERROR_FILE_NOT_FOUND;
+                            RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "" : DefaultStrings[ValueName]);
+                        break;
                     }
-                    break;
-                }
-                case REG_SZ:
-                case REG_EXPAND_SZ:
-                {
-                    if (lpData != NULL)
+                    case REG_DWORD:
                     {
-                        std::string_view str((char*)lpData, *lpcbData);
-                        auto ret = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
-                        *lpcbData = min(ret.length(), str.length());
-                        ret.copy((char*)str.data(), *lpcbData, 0);
-                        lpData[*lpcbData] = '\0';
-                        if ((ret.empty() || DefaultStrings[ValueName] == ret) && PathStrings.find(ValueName) == PathStrings.end())
-                            RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "INSERTSTRINGDATAHERE" : DefaultStrings[ValueName]);
+                        DWORD def = UINT_MAX;
+                        if (!DefaultStrings[ValueName].empty())
+                        {
+                            try
+                            {
+                                def = (DWORD)std::stoul(DefaultStrings[ValueName]);
+                            } catch (const std::invalid_argument&)
+                            {
+                                def = UINT_MAX;
+                            }
+                        }
+                        try
+                        {
+                            *(DWORD*)lpData = RegistryReader.ReadInteger(section, ValueName, def);
+                        } catch (const std::invalid_argument&)
+                        {
+                            *(DWORD*)lpData = UINT_MAX;
+                        }
+                        if (*(DWORD*)lpData == UINT_MAX)
+                        {
+                            RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "INSERTDWORDHERE" : DefaultStrings[ValueName]);
+                            *(DWORD*)lpData = 0;
+                        }
+                        *lpcbData = sizeof(DWORD);
+                        break;
                     }
-                    else
+                    case REG_MULTI_SZ: //not implemented
+                        break;
+                    case REG_NONE:
+                    {
+                        if (lpData != NULL)
+                        {
+                            *(bool*)lpData = RegistryReader.ReadBoolean("MAIN", ValueName, false);
+                            *lpcbData = sizeof(bool);
+                        }
+                        else
+                        {
+                            auto s = DefaultStrings.find(ValueName);
+                            if (s != DefaultStrings.end())
+                            {
+                                *lpcbData = s->second.size();
+                                *lpType = 1;
+                                return ERROR_SUCCESS;
+                            }
+                            else
+                                return ERROR_FILE_NOT_FOUND;
+                        }
+                        break;
+                    }
+                    case REG_SZ:
+                    case REG_EXPAND_SZ:
+                    {
+                        if (lpData != NULL)
+                        {
+                            std::string_view str((char*)lpData, *lpcbData);
+                            auto ret = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
+                            *lpcbData = std::min(ret.length(), str.length());
+                            ret.copy((char*)str.data(), *lpcbData, 0);
+                            lpData[*lpcbData] = '\0';
+                            if ((ret.empty() || DefaultStrings[ValueName] == ret) && PathStrings.find(ValueName) == PathStrings.end())
+                                RegistryReader.WriteString(section, ValueName, DefaultStrings[ValueName].empty() ? "INSERTSTRINGDATAHERE" : DefaultStrings[ValueName]);
+                        }
+                        else
+                        {
+                            auto ret = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
+                            *lpcbData = ret.length();
+                        }
+                        break;
+                    }
+                    default:
                     {
                         auto ret = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
                         *lpcbData = ret.length();
+                        *lpType = REG_SZ;
+                        break;
                     }
-                    break;
-                }
-                default:
-                {
-                    auto ret = RegistryReader.ReadString(section, ValueName, DefaultStrings[ValueName]);
-                    *lpcbData = ret.length();
-                    *lpType = REG_SZ;
-                    break;
-                }
                 }
             }
             return ERROR_SUCCESS;
@@ -585,47 +635,47 @@ public:
 
             switch (dwType)
             {
-            case REG_BINARY:
-            {
-                std::string str;
-                for (size_t i = 0; i < cbData; i++)
+                case REG_BINARY:
                 {
-                    str += format("%02x", lpData[i]);
-                    if (i != cbData - 1)
+                    std::string str;
+                    for (size_t i = 0; i < cbData; i++)
+                    {
+                        str += std::format("{:02x}", lpData[i]);
+                        if (i != cbData - 1)
+                            str += ',';
+                    }
+                    RegistryReader.WriteString(section, lpValueName, str);
+                    break;
+                }
+                case REG_DWORD:
+                    RegistryReader.WriteInteger(section, lpValueName, *(DWORD*)lpData);
+                    break;
+                case REG_MULTI_SZ:
+                {
+                    std::string str;
+                    const char* temp = (const char*)lpData;
+                    size_t index = 0;
+                    size_t len = strlen(&temp[0]) + 1;
+                    while (len > 1)
+                    {
+                        str += temp[index];
                         str += ',';
+                        index += len + 1;
+                        len = strlen(&temp[index]) + 1;
+                    }
+                    str.resize(str.size() - 1);
+                    RegistryReader.WriteString(section, lpValueName, str);
+                    break;
                 }
-                RegistryReader.WriteString(section, lpValueName, str);
-                break;
-            }
-            case REG_DWORD:
-                RegistryReader.WriteInteger(section, lpValueName, *(DWORD*)lpData);
-                break;
-            case REG_MULTI_SZ:
-            {
-                std::string str;
-                const char* temp = (const char*)lpData;
-                size_t index = 0;
-                size_t len = strlen(&temp[0]) + 1;
-                while (len > 1)
-                {
-                    str += temp[index];
-                    str += ',';
-                    index += len + 1;
-                    len = strlen(&temp[index]) + 1;
-                }
-                str.resize(str.size() - 1);
-                RegistryReader.WriteString(section, lpValueName, str);
-                break;
-            }
-            case REG_NONE:
-                RegistryReader.WriteBoolean("MAIN", lpValueName, true);
-                break;
-            case REG_SZ:
-            case REG_EXPAND_SZ:
-                RegistryReader.WriteString(section, lpValueName, std::string((char*)lpData, cbData));
-                break;
-            default:
-                break;
+                case REG_NONE:
+                    RegistryReader.WriteBoolean("MAIN", lpValueName, true);
+                    break;
+                case REG_SZ:
+                case REG_EXPAND_SZ:
+                    RegistryReader.WriteString(section, lpValueName, std::string((char*)lpData, cbData));
+                    break;
+                default:
+                    break;
             }
             return ERROR_SUCCESS;
         }
@@ -672,6 +722,45 @@ public:
             return ::RegCreateKeyExA(hKey, lpSubKey, Reserved, lpClass, dwOptions, samDesired, lpSecurityAttributes, phkResult, lpdwDisposition);
     }
 };
+
+namespace AffinityChanges
+{
+    static inline DWORD_PTR gameThreadAffinity = 0;
+    static inline bool Init()
+    {
+        DWORD_PTR processAffinity, systemAffinity;
+        if (!GetProcessAffinityMask(GetCurrentProcess(), &processAffinity, &systemAffinity))
+        {
+            return false;
+        }
+
+        DWORD_PTR otherCoresAff = (processAffinity - 1) & processAffinity;
+        if (otherCoresAff == 0) // Only one core is available for the game
+        {
+            return false;
+        }
+        gameThreadAffinity = processAffinity & ~otherCoresAff;
+
+        SetThreadAffinityMask(GetCurrentThread(), gameThreadAffinity);
+
+        return true;
+    }
+
+    static inline HANDLE WINAPI CreateThread_GameThread(LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress,
+        PVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId)
+    {
+        HANDLE hThread = CreateThread(lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags | CREATE_SUSPENDED, lpThreadId);
+        if (hThread != nullptr)
+        {
+            SetThreadAffinityMask(hThread, gameThreadAffinity);
+            if ((dwCreationFlags & CREATE_SUSPENDED) == 0) // Resume only if the game didn't pass CREATE_SUSPENDED
+            {
+                ResumeThread(hThread);
+            }
+        }
+        return hThread;
+    }
+}
 
 namespace WindowedModeWrapper
 {
@@ -749,7 +838,7 @@ namespace WindowedModeWrapper
         return AdjustWindowRect(lpRect, newStyle, bMenu);
     }
 
-    static BOOL WINAPI CenterWindowPosition(int nWidth, int nHeight) 
+    static BOOL WINAPI CenterWindowPosition(int nWidth, int nHeight)
     {
         // fix the window to open at the center of the screen...
         HMONITOR monitor = MonitorFromWindow(GetDesktopWindow(), MONITOR_DEFAULTTONEAREST);
@@ -785,7 +874,10 @@ namespace WindowedModeWrapper
 
     static HWND WINAPI CreateWindowExA_Hook(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
     {
-        auto[WindowPosX, WindowPosY, newWidth, newHeight] = beforeCreateWindow(nWidth, nHeight);
+        if (hWndParent)
+            return CreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+
+        auto [WindowPosX, WindowPosY, newWidth, newHeight] = beforeCreateWindow(nWidth, nHeight);
         GameHWND = CreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, WindowPosX, WindowPosY, newWidth, newHeight, hWndParent, hMenu, hInstance, lpParam);
         afterCreateWindow();
         return GameHWND;
@@ -793,6 +885,9 @@ namespace WindowedModeWrapper
 
     static HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
     {
+        if (hWndParent)
+            return CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+
         auto [WindowPosX, WindowPosY, newWidth, newHeight] = beforeCreateWindow(nWidth, nHeight);
         GameHWND = CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, WindowPosX, WindowPosY, newWidth, newHeight, hWndParent, hMenu, hInstance, lpParam);
         afterCreateWindow();
@@ -852,6 +947,16 @@ namespace WindowedModeWrapper
         }
         return res;
     }
+
+    static BOOL WINAPI MoveWindow_Hook(HWND hWnd, int X, int Y, int nWidth, int nHeight, BOOL bRepaint)
+    {
+        BOOL res = MoveWindow(hWnd, X, Y, nWidth, nHeight, bRepaint);
+        if (bBorderlessWindowed && GameHWND == hWnd)
+        {
+            CenterWindowPosition(nWidth, nHeight);
+        }
+        return res;
+    }
 };
 
 class IATHook
@@ -884,7 +989,8 @@ public:
                         {
                             auto name = std::string_view(std::get<0>(inputs));
                             auto num = std::string("-1");
-                            if (name.contains("@")) {
+                            if (name.contains("@"))
+                            {
                                 num = name.substr(name.find_last_of("@") + 1);
                                 name = name.substr(0, name.find_last_of("@"));
                             }
@@ -899,8 +1005,7 @@ public:
                                         originalPtrs[std::get<0>(inputs)].wait();
                                         *pAddress = std::get<1>(inputs);
                                     }
-                                }
-                                catch (...) {}
+                                } catch (...) {}
                             }
                             else if ((*pAddress && *pAddress == (void*)GetProcAddress(GetModuleHandleA(dll_name.data()), name.data())) ||
                             (strcmp(reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(instance + pThunk[j].u1.AddressOfData)->Name, name.data()) == 0))
@@ -939,7 +1044,7 @@ public:
         if (originalPtrs.empty())
         {
             PIMAGE_DELAYLOAD_DESCRIPTOR pDelayed = reinterpret_cast<PIMAGE_DELAYLOAD_DESCRIPTOR>(instance + ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
-            if (pDelayed)
+            if (pDelayed && ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress != 0 && ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].Size != 0)
             {
                 for (; pDelayed->DllNameRVA != 0; pDelayed++)
                 {
@@ -962,7 +1067,8 @@ public:
                                 {
                                     auto name = std::string_view(std::get<0>(inputs));
                                     auto num = std::string("-1");
-                                    if (name.contains("@")) {
+                                    if (name.contains("@"))
+                                    {
                                         num = name.substr(name.find_last_of("@") + 1);
                                         name = name.substr(0, name.find_last_of("@"));
                                     }
@@ -991,8 +1097,7 @@ public:
                                                     return r;
                                                 }, pAddress, std::get<1>(inputs), (PVOID)instance);
                                             }
-                                        }
-                                        catch (...) {}
+                                        } catch (...) {}
                                     }
                                     else if ((*pAddress && *pAddress == (void*)GetProcAddress(GetModuleHandleA(dll_name.data()), name.data())) ||
                                     (strcmp(reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(instance + pThunk[j].u1.AddressOfData)->Name, name.data()) == 0))
@@ -1037,7 +1142,7 @@ public:
             for (auto i = 0; i < ntHeader->FileHeader.NumberOfSections; i++)
             {
                 auto sec = getSection(ntHeader, i);
-                auto pFunctions = reinterpret_cast<void**>(instance + max(sec->PointerToRawData, sec->VirtualAddress));
+                auto pFunctions = reinterpret_cast<void**>(instance + std::max(sec->PointerToRawData, sec->VirtualAddress));
 
                 for (ptrdiff_t j = 0; j < 300; j++)
                 {
@@ -1047,7 +1152,8 @@ public:
                     {
                         auto name = std::string_view(std::get<0>(inputs));
                         auto num = std::string("-1");
-                        if (name.contains("@")) {
+                        if (name.contains("@"))
+                        {
                             num = name.substr(name.find_last_of("@") + 1);
                             name = name.substr(0, name.find_last_of("@"));
                         }
@@ -1141,28 +1247,274 @@ public:
     };
 
 public:
-    static Event<>& onInitEvent() {
+    static Event<>& onInitEvent()
+    {
         static Event<> InitEvent;
         return InitEvent;
     }
-    static Event<>& onInitEventAsync() {
+    static Event<>& onInitEventAsync()
+    {
         static Event<> InitEventAsync;
         return InitEventAsync;
     }
-    static Event<>& onAfterUALRestoredIATEvent() {
+    static Event<>& onAfterUALRestoredIATEvent()
+    {
         static Event<> AfterUALRestoredIATEvent;
         return AfterUALRestoredIATEvent;
     }
-    static Event<>& onShutdownEvent() {
+    static Event<>& onShutdownEvent()
+    {
         static Event<> ShutdownEvent;
         return ShutdownEvent;
     }
-    static Event<>& onGameInitEvent() {
+    static Event<>& onGameInitEvent()
+    {
         static Event<> GameInitEvent;
         return GameInitEvent;
     }
-    static Event<>& onGameProcessEvent() {
+    static Event<>& onGameProcessEvent()
+    {
         static Event<> GameProcessEvent;
         return GameProcessEvent;
     }
+};
+
+namespace injector
+{
+    inline bool UnprotectMemory(memory_pointer_tr addr, size_t size)
+    {
+        DWORD out_oldprotect = 0;
+        return VirtualProtect(addr.get(), size, PAGE_EXECUTE_READWRITE, &out_oldprotect) != 0;
+    }
+
+    #ifdef _WIN64
+    inline injector::memory_pointer_raw MakeCALLTrampoline(injector::memory_pointer_tr at, injector::memory_pointer_raw dest, bool vp = true)
+    {
+        auto trampoline = Trampoline::MakeTrampoline((void*)at.as_int());
+        return MakeCALL(at, trampoline->Jump(dest));
+    }
+    #endif
+};
+
+template<typename T = int16_t>
+class RawInputHandler
+{
+public:
+    static inline T RawMouseCursorX = 0;
+    static inline T RawMouseCursorY = 0;
+    static inline T RawMouseDeltaX = 0;
+    static inline T RawMouseDeltaY = 0;
+
+    static void RegisterRawInput(HWND hWnd, float sensitivity = 1.0f, bool bUseRawData = false)
+    {
+        Sensitivity = sensitivity;
+        UseRawData = bUseRawData;
+        SystemParametersInfo(SPI_GETMOUSE, 0, MouseAcceleration, 0);
+        SystemParametersInfo(SPI_GETMOUSESPEED, 0, &MouseSpeed, 0);
+        DefaultWndProc = (WNDPROC)SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)RawInputWndProc);
+        rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC;
+        rid[0].usUsage = HID_USAGE_GENERIC_MOUSE;
+        rid[0].dwFlags = RIDEV_INPUTSINK;
+        rid[0].hwndTarget = hWnd;
+        RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE));
+    }
+
+    static void OnResChange()
+    {
+        RECT windowRect;
+        GetWindowRect(rid[0].hwndTarget, &windowRect);
+        RawMouseCursorX = static_cast<T>((windowRect.right - windowRect.left) / 2 + windowRect.left);
+        RawMouseCursorY = static_cast<T>((windowRect.bottom - windowRect.top) / 2 + windowRect.top);
+    }
+
+private:
+    static inline WNDPROC DefaultWndProc;
+    static inline RAWINPUTDEVICE rid[1];
+    static inline int MouseAcceleration[3] = { 0 };  // [0]=threshold1, [1]=threshold2, [2]=level (0=off, 1 or 2=on with varying strength)
+    static inline int MouseSpeed = 10; // Default to 10 if query fails
+    static inline float Sensitivity = 1.0f;
+    static inline bool UseRawData = false;
+
+    static LRESULT CALLBACK RawInputWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+    {
+        static float SubpixelX = 0.0f;          // Carry-over fractions for X
+        static float SubpixelY = 0.0f;          // Carry-over fractions for Y
+
+        if (uMsg == WM_INPUT)
+        {
+            RECT clientRect;
+            GetClientRect(hWnd, &clientRect);
+
+            UINT dwSize = 0;
+            GetRawInputData((HRAWINPUT)lParam, RID_INPUT, nullptr, &dwSize, sizeof(RAWINPUTHEADER));
+            std::vector<BYTE> buffer(dwSize);
+            RAWINPUT* raw = (RAWINPUT*)buffer.data();
+            if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, raw, &dwSize, sizeof(RAWINPUTHEADER)) == dwSize)
+            {
+                if (raw->header.dwType == RIM_TYPEMOUSE)
+                {
+                    float dx = static_cast<float>(raw->data.mouse.lLastX);
+                    float dy = static_cast<float>(raw->data.mouse.lLastY);
+
+                    if (UseRawData)
+                    {
+                        // Raw input mode: only apply sensitivity
+                        dx *= Sensitivity;
+                        dy *= Sensitivity;
+                    }
+                    else
+                    {
+                        // Standard mode: apply acceleration, speed, and sensitivity
+                        // Apply acceleration (independent for each axis, using original abs values)
+                        float abs_dx = std::fabsf(dx);
+                        if (MouseAcceleration[2] > 0 && MouseAcceleration[0] < abs_dx)
+                            dx *= 2.0f;
+                        if (MouseAcceleration[2] == 2 && MouseAcceleration[1] < abs_dx)
+                            dx *= 2.0f;
+
+                        float abs_dy = std::fabsf(dy);
+                        if (MouseAcceleration[2] > 0 && MouseAcceleration[0] < abs_dy)
+                            dy *= 2.0f;
+                        if (MouseAcceleration[2] == 2 && MouseAcceleration[1] < abs_dy)
+                            dy *= 2.0f;
+
+                        // Apply mouse speed scaling
+                        dx *= (static_cast<float>(MouseSpeed) / 10.0f);
+                        dy *= (static_cast<float>(MouseSpeed) / 10.0f);
+
+                        // Apply custom sensitivity factor
+                        dx *= Sensitivity;
+                        dy *= Sensitivity;
+                    }
+
+                    // Add subpixel carry-over, round to int for accumulation, save new fractions
+                    dx += SubpixelX;
+                    dy += SubpixelY;
+                    T int_dx = static_cast<T>(std::roundf(dx));
+                    T int_dy = static_cast<T>(std::roundf(dy));
+                    SubpixelX = dx - static_cast<float>(int_dx);
+                    SubpixelY = dy - static_cast<float>(int_dy);
+
+                    // Accumulate and clamp
+                    T oldX = RawMouseCursorX;
+                    T oldY = RawMouseCursorY;
+
+                    RawMouseCursorX += int_dx;
+                    RawMouseCursorY += int_dy;
+
+                    RawMouseDeltaX += (RawMouseCursorX - oldX);
+                    RawMouseDeltaY += (RawMouseCursorY - oldY);
+
+                    RawMouseCursorX = std::max(T(0), std::min(RawMouseCursorX, static_cast<T>(clientRect.right)));
+                    RawMouseCursorY = std::max(T(0), std::min(RawMouseCursorY, static_cast<T>(clientRect.bottom)));
+                }
+            }
+            PostMessage(hWnd, WM_RAWINPUTMOUSE, 0, 0);
+            return 0;  // Consume the message to avoid game interference.
+        }
+        return CallWindowProc(DefaultWndProc, hWnd, uMsg, wParam, lParam);
+    }
+
+    static void SetSensitivity(float sensitivity)
+    {
+        Sensitivity = sensitivity;
+    }
+};
+
+template<typename T = int16_t>
+class RawCursorHandler
+{
+public:
+    static inline T MouseCursorX = 0;
+    static inline T MouseCursorY = 0;
+    static inline T MouseDeltaX = 0;
+    static inline T MouseDeltaY = 0;
+
+    static void Initialize(HWND hWnd, float sensitivity = 1.0f)
+    {
+        Sensitivity = sensitivity;
+        TargetWindow = hWnd;
+        OnResChange();
+    }
+
+    static void OnResChange()
+    {
+        RECT windowRect;
+        GetWindowRect(TargetWindow, &windowRect);
+        MouseCursorX = static_cast<T>((windowRect.right - windowRect.left) / 2 + windowRect.left);
+        MouseCursorY = static_cast<T>((windowRect.bottom - windowRect.top) / 2 + windowRect.top);
+        SetCursorPos(MouseCursorX, MouseCursorY);
+    }
+
+    static HWND UpdateMouseInput(bool bIsAbsoluteValue = false)
+    {
+        if (TargetWindow != GetForegroundWindow())
+        {
+            if (bIsAbsoluteValue)
+                ClipCursor(NULL);
+
+            return TargetWindow;
+        }
+
+        RECT windowRect;
+        GetWindowRect(TargetWindow, &windowRect);
+
+        if (bIsAbsoluteValue)
+        {
+            POINT cursorPos;
+            ClipCursor(&windowRect);
+            GetCursorPos(&cursorPos);
+            MouseCursorX = static_cast<T>(cursorPos.x - windowRect.left);
+            MouseCursorY = static_cast<T>(cursorPos.y - windowRect.top);
+        }
+        else
+        {
+            POINT cursorPos;
+            GetCursorPos(&cursorPos);
+
+            T centerX = static_cast<T>((windowRect.right - windowRect.left) / 2 + windowRect.left);
+            T centerY = static_cast<T>((windowRect.bottom - windowRect.top) / 2 + windowRect.top);
+
+            T deltaX = static_cast<T>(cursorPos.x - centerX);
+            T deltaY = static_cast<T>(cursorPos.y - centerY);
+
+            float scaledDeltaX = static_cast<float>(deltaX) * Sensitivity;
+            float scaledDeltaY = static_cast<float>(deltaY) * Sensitivity;
+
+            MouseDeltaX += static_cast<T>(scaledDeltaX);
+            MouseDeltaY -= static_cast<T>(scaledDeltaY);
+
+            SetCursorPos(centerX, centerY);
+        }
+
+        return TargetWindow;
+    }
+
+    static void SetSensitivity(float sensitivity)
+    {
+        Sensitivity = sensitivity;
+    }
+
+private:
+    static inline HWND TargetWindow = nullptr;
+    static inline float Sensitivity = 1.0f;
+};
+
+template<typename T>
+class GameRef
+{
+private:
+    static inline T placeholder{};
+    std::reference_wrapper<T> ref;
+
+public:
+    GameRef() : ref(std::ref(placeholder)) {}
+
+    void SetAddress(auto addr)
+    {
+        ref = std::ref(*reinterpret_cast<T*>(addr));
+    }
+
+    T& get() { return ref.get(); }
+    operator T& () { return ref.get(); }
 };

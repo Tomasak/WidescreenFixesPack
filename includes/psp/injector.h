@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
+#include "memalloc.h"
 #include "mips.h"
 
 #define LOWORD(l)           ((uint16_t)((*(uint32_t*)(&l)) & 0xffff))
@@ -17,7 +18,6 @@ struct injector_t {
     size_t base_size;
     uintptr_t module_addr;
     size_t module_size;
-    int  (*AllocMemBlock)(int size, int* id);
     void (*FreeMemBlock)();
     void*(*GetGP)();
     void*(*SetGP)(void* gp);
@@ -49,6 +49,7 @@ struct injector_t {
     uintptr_t(*MakeInline)(size_t instrCount, uintptr_t at, ...);
     void (*MakeInlineLUIORI)(uintptr_t at, float imm);
     void (*MakeInlineLI)(uintptr_t at, int32_t imm);
+    uintptr_t (*MakeTrampoline)(uintptr_t at, uintptr_t wrapper_func);
 };
 
 extern struct injector_t injector;

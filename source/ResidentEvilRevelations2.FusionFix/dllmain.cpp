@@ -147,6 +147,10 @@ enum GUI
     VirtualScreen = 0x141AC10
 };
 
+static IDirect3DVertexShader9* g_screenVertexShader = nullptr;
+static IDirect3DPixelShader9* g_wmvYuvDecodePixelShader = nullptr;
+static IDirect3DVertexShader9* g_myScreenVertexShader = nullptr;
+
 bool IsSplitScreenActive()
 {
     auto ptr = *(uint32_t*)0x157AE00;
@@ -244,7 +248,7 @@ void __fastcall sub_96C410(int _this, int edx, int a2, int a3)
         v9 = v10;
 
     if (IsSplitScreenActive())
-        a2 += (int32_t)(720.0f * GetAspectRatio()) - (1280.0f / (1280.0f / GetNativeSplitScreenResX()));
+        a2 += (int32_t)((720.0f * GetAspectRatio()) - (1280.0f / (1280.0f / GetNativeSplitScreenResX())));
     else
         a2 += (int32_t)(((720.0f * GetAspectRatio()) - 1280.0f) / 2.0f);
 
@@ -256,7 +260,8 @@ enum
 {
     RESCALE = 0xAAAAEEEE,
     STRETCH = 0xBBBBFFFF,
-    OFFSET = 0xCCCCDDDD
+    OFFSET = 0xCCCCDDDD,
+    SUBTITLES = 0xDDDDDDDD,
 };
 
 void __fastcall sub_E18040(int _this, int edx, int a2)
@@ -351,58 +356,59 @@ void __fastcall sub_E18040(int _this, int edx, int a2)
     *((uint32_t*)v2 + 81) |= 1u;
     if (v13)
     {
-        v14 = 2.0 / (float)(v28 - v19);
-        v15 = -2.0 / (float)(v21 - v29);
+        v14 = 2.0f / (float)(v28 - v19);
+        v15 = -2.0f / (float)(v21 - v29);
         v13[0] = v14 * v4;
         v13[1] = v15 * v5;
-        v13[2] = (float)(v14 * v6) - 1.0;
-        v13[3] = (float)(v15 * v7) + 1.0;
+        v13[2] = (float)(v14 * v6) - 1.0f;
+        v13[3] = (float)(v15 * v7) + 1.0f;
         *((uint32_t*)v2 + 19) &= ~2u;
 
         switch (edx)
         {
+        case SUBTITLES:
         case RESCALE:
         {
             if (IsSplitScreenActive())
             {
                 if (v21 == GetCurrentSplitScreenResY() || v21 == (GetCurrentSplitScreenResY() + 1))
                 {
-                    v14 = 2.0 / (float)(v28 - v19);
-                    v15 = -2.0 / (float)(v21 - v29);
-                    v13[0] = v14 * v4;
+                    v14 = 2.0f / (float)(v28 - v19);
+                    v15 = -2.0f / (float)(v21 - v29);
+                    v13[0] = v14 * v4 * ((edx == SUBTITLES) ? (1.0f / GetDiff()) : 1.0f);
                     v13[1] = v15 * v5;
                     v13[2] = (float)(v14 * v6) - (1.0f / GetDiff());
-                    v13[3] = (float)(v15 * v7) + 1.0;
+                    v13[3] = (float)(v15 * v7) + 1.0f;
                 }
                 else if (v21 == GetResY())
                 {
-                    v14 = 2.0 / (float)(v28 - v19);
-                    v15 = -2.0 / (float)(v21 - v29);
-                    v13[0] = v14 * v4;
+                    v14 = 2.0f / (float)(v28 - v19);
+                    v15 = -2.0f / (float)(v21 - v29);
+                    v13[0] = v14 * v4 * ((edx == SUBTITLES) ? (1.0f / GetDiff()) : 1.0f);
                     v13[1] = v15 * v5;
                     v13[2] = (float)(v14 * v6) - (1.0f / (GetAspectRatio() / defaultAspectRatio));
-                    v13[3] = (float)(v15 * v7) + 1.0;
+                    v13[3] = (float)(v15 * v7) + 1.0f;
                 }
             }
             else
             {
-                v14 = 2.0 / (float)(v28 - v19);
-                v15 = -2.0 / (float)(v21 - v29);
-                v13[0] = v14 * v4;
+                v14 = 2.0f / (float)(v28 - v19);
+                v15 = -2.0f / (float)(v21 - v29);
+                v13[0] = v14 * v4 * ((edx == SUBTITLES) ? (1.0f / GetDiff()) : 1.0f);
                 v13[1] = v15 * v5;
                 v13[2] = (float)(v14 * v6) - (1.0f / GetDiff());
-                v13[3] = (float)(v15 * v7) + 1.0;
+                v13[3] = (float)(v15 * v7) + 1.0f;
             }
         }
         break;
         case STRETCH:
         {
-            v14 = (2.0 * GetDiff()) / (float)(v28 - v19);
-            v15 = -2.0 / (float)(v21 - v29);
+            v14 = (2.0f * GetDiff()) / (float)(v28 - v19);
+            v15 = -2.0f / (float)(v21 - v29);
             v13[0] = v14 * v4;
             v13[1] = v15 * v5;
             v13[2] = -1.0f; //(float)(v14 * v6) - fDiffInv;
-            v13[3] = (float)(v15 * v7) + 1.0;
+            v13[3] = (float)(v15 * v7) + 1.0f;
         }
         break;
         case OFFSET:
@@ -411,33 +417,33 @@ void __fastcall sub_E18040(int _this, int edx, int a2)
             {
                 if (v21 == GetCurrentSplitScreenResY() || v21 == (GetCurrentSplitScreenResY() + 1))
                 {
-                    v14 = 2.0 / (float)(v28 - v19);
-                    v15 = -2.0 / (float)(v21 - v29);
+                    v14 = 2.0f / (float)(v28 - v19);
+                    v15 = -2.0f / (float)(v21 - v29);
                     v13[0] = v14 * v4;
                     v13[1] = v15 * v5;
                     v13[2] = (float)(v14 * v6) - (1.0f / GetDiff());
-                    v13[3] = (float)(v15 * v7) + 1.0;
+                    v13[3] = (float)(v15 * v7) + 1.0f;
                 }
                 else if (v21 == GetResY())
                 {
-                    v14 = 2.0 / (float)(v28 - v19);
-                    v15 = -2.0 / (float)(v21 - v29);
+                    v14 = 2.0f / (float)(v28 - v19);
+                    v15 = -2.0f / (float)(v21 - v29);
                     v13[0] = v14 * v4;
                     v13[1] = v15 * v5;
                     v13[2] = (float)(v14 * v6) - (1.0f / (GetAspectRatio() / defaultAspectRatio));
-                    v13[3] = (float)(v15 * v7) + 1.0;
+                    v13[3] = (float)(v15 * v7) + 1.0f;
                 }
             }
             else
             {
                 if (v21 == GetResY())
                 {
-                    v14 = 2.0 / (float)(v28 - v19);
-                    v15 = -2.0 / (float)(v21 - v29);
+                    v14 = 2.0f / (float)(v28 - v19);
+                    v15 = -2.0f / (float)(v21 - v29);
                     v13[0] = v14 * v4;
                     v13[1] = v15 * v5;
                     v13[2] = (float)(v14 * v6) - (1.0f / GetDiff());
-                    v13[3] = (float)(v15 * v7) + 1.0;
+                    v13[3] = (float)(v15 * v7) + 1.0f;
                 }
             }
         }
@@ -470,7 +476,7 @@ void __fastcall sub_E18040(int _this, int edx, int a2)
     {
         goto LABEL_18;
     }
-    v18 = v20 + 0.25;
+    v18 = v20 + 0.25f;
 LABEL_19:
     v16 = a2;
 LABEL_20:
@@ -493,6 +499,11 @@ void __fastcall sub_E18040_nop(int _this, int edx, int a2)
 
 void __fastcall sub_E18040_rescale(int _this, int edx, int a2)
 {
+    auto uBioGUISubtitles = (const char*)(*(uintptr_t*)_this + 0x1B8);
+
+    if (!IsBadReadPtr(uBioGUISubtitles, sizeof(char*)) && std::string_view(uBioGUISubtitles) == "uBioGUISubtitles")
+        return sub_E18040(_this, SUBTITLES, a2);
+
     return sub_E18040(_this, RESCALE, a2);
 }
 
@@ -521,6 +532,7 @@ IDirect3DVertexShader9* __stdcall CreateVertexShaderHook(const DWORD** a1)
         return nullptr;
 
     auto pDevice = (IDirect3DDevice9*)*((uint32_t*)*(uint32_t*)0x15E0388 + 0x26);
+
     IDirect3DVertexShader9* pShader = nullptr;
     pDevice->CreateVertexShader(a1[2], &pShader);
 
@@ -534,7 +546,6 @@ IDirect3DVertexShader9* __stdcall CreateVertexShaderHook(const DWORD** a1)
 
         pShader->GetFunction(pbFunc.data(), &len);
 
-        uint32_t crc32(uint32_t crc, const void* buf, size_t size);
         auto crc = crc32(0, pbFunc.data(), len);
 
         // various overlays (low health, waiting for partner, pause text, maybe more)
@@ -596,16 +607,83 @@ IDirect3DVertexShader9* __stdcall CreateVertexShaderHook(const DWORD** a1)
             {
                 pShaderData = (DWORD*)pCode->GetBufferPointer();
                 IDirect3DVertexShader9* shader = nullptr;
-                result = pDevice->CreateVertexShader(pShaderData, &shader);
-                if (FAILED(result)) {
-                    return pShader;
-                }
-                else
+                if (pDevice->CreateVertexShader(pShaderData, &shader) == D3D_OK)
                 {
                     pShader->Release();
                     return shader;
                 }
             }
+        }
+        else if (crc == 0x1287841D)
+        {
+            g_screenVertexShader = pShader;
+
+            // inject additional, alternative screenspace shader for FMV fixups
+            constexpr auto src = R"(
+            struct VS_INPUT {
+                float4 position : POSITION;
+            };
+            
+            struct VS_OUTPUT {
+                float4 position : POSITION;
+                float4 uv : TEXCOORD;
+            };
+            
+            float2 fScreenHalfPixelOffset : register(c1);
+            float fHorizontalAspectScale : register(c20);
+            
+            VS_OUTPUT main(VS_INPUT input)
+            {
+                VS_OUTPUT output;
+            
+                output.position = float4(
+                  -fScreenHalfPixelOffset.x + input.position.x * fHorizontalAspectScale,
+                  fScreenHalfPixelOffset.y + input.position.y,
+                  0.0,
+                  1.0);
+                output.uv = float4(
+                  1.0 * input.position.z,
+                  1.0 * input.position.w,
+                  0.0, 0.0
+                );
+            
+                return output;
+            })";
+
+            LPD3DXBUFFER code;
+            if (SUCCEEDED(D3DXCompileShader(src, strlen(src), nullptr, nullptr, "main", "vs_3_0", NULL, &code, nullptr, nullptr)))
+            {
+                pDevice->CreateVertexShader(reinterpret_cast<const DWORD*>(code->GetBufferPointer()), &g_myScreenVertexShader);
+            }
+        }
+    }
+
+    return pShader;
+}
+
+IDirect3DPixelShader9* __stdcall CreatePixelShaderHook(const DWORD** a1)
+{
+    if (!a1)
+        return nullptr;
+
+    auto pDevice = (IDirect3DDevice9*)*((uint32_t*)*(uint32_t*)0x15E0388 + 0x26);
+
+    IDirect3DPixelShader9* pShader = nullptr;
+    pDevice->CreatePixelShader(a1[2], &pShader);
+
+    if (pShader != nullptr)
+    {
+        UINT len;
+        pShader->GetFunction(nullptr, &len);
+        std::vector<uint8_t> pbFunc(len, 0);
+
+        pShader->GetFunction(pbFunc.data(), &len);
+
+        auto crc = crc32(0, pbFunc.data(), len);
+
+        if (crc == 0x9D190FC7)
+        {
+            g_wmvYuvDecodePixelShader = pShader;
         }
     }
 
@@ -699,6 +777,12 @@ DWORD WINAPI XInputGetStateHook(DWORD dwUserIndex, XINPUT_STATE* pState)
     return ret;
 }
 
+int nForceLogo = 0;
+int sub_984240()
+{
+    return nForceLogo - 1;
+}
+
 void Init()
 {
     CIniReader iniReader("");
@@ -712,6 +796,7 @@ void Init()
     if (fFOVFactor <= 0.0f) fFOVFactor = 1.0f;
     bDisableCreateQuery = iniReader.ReadInteger("MAIN", "DisableCreateQuery", 0) != 0;
     auto bAutoclicker = iniReader.ReadInteger("MAIN", "Autoclicker", 0) != 0;
+    nForceLogo = std::clamp(iniReader.ReadInteger("MAIN", "ForceLogo", 0), 0, 4);
     
     if (bSkipIntro)
     {
@@ -755,7 +840,28 @@ void Init()
     });
 
     // movies fix for ultra wide
-    // ?
+    {
+        static auto DrawPrimitiveHook = safetyhook::create_mid(0xCC8788, [](SafetyHookContext& regs)
+        {
+            auto g_device = (IDirect3DDevice9*)regs.edi;
+
+            // switch to a x-scaling vertex shader if drawing FMVs
+            IDirect3DPixelShader9* frag;
+            g_device->GetPixelShader(&frag);
+            if (frag != g_wmvYuvDecodePixelShader)
+                return;
+
+            IDirect3DVertexShader9* vert;
+            g_device->GetVertexShader(&vert);
+            if (vert != g_screenVertexShader)
+                return;
+
+            g_device->SetVertexShader(g_myScreenVertexShader);
+            const float horzScaleFactor = (defaultAspectRatio / GetAspectRatio());
+            const std::array<float, 4> shaderConsts = { horzScaleFactor, 0.0f, 0.0f, 0.0f };
+            g_device->SetVertexShaderConstantF(20, shaderConsts.data(), 1);
+        });
+    }
 
     // split screen windows dimensions
     injector::MakeCALL(0x4AE6E8, SplitScreenSetupTop, true);
@@ -805,7 +911,8 @@ void Init()
 
     //disable shader overlays (don't scale to fullscreen)
     {
-        injector::MakeCALL(0xFFB9E2, CreateVertexShaderHook, true);
+      injector::MakeCALL(0xFFB9E2, CreateVertexShaderHook, true);
+      injector::MakeCALL(0xFFBA31, CreatePixelShaderHook, true);
 
         //struct SetVertexShaderHook
         //{
@@ -877,6 +984,21 @@ void Init()
         
         auto pattern = hook::pattern("E8 ? ? ? ? 8B D0 85 D2 75 13 8B 07 8B CF FF 50 60 56 FF 15 ? ? ? ? 5E 5F C2 0C 00 8B CA 53 8D 59 01 8D A4 24");
         hb_954B40.fun = injector::MakeCALL(pattern.get_first(), sub_954B40, true).get();
+    }
+
+    if (nForceLogo)
+    {
+        auto pattern = hook::pattern("E8 ? ? ? ? 83 F8 03 77 ? FF 24 85 ? ? ? ? 6A 01 68 04 8F 39 01");
+        injector::MakeCALL(pattern.get_first(), sub_984240, true);
+
+        pattern = hook::pattern("E8 ? ? ? ? 83 F8 03 0F 87 ? ? ? ? FF 24 85 ? ? ? ? 68 E8 8E 39 01");
+        injector::MakeCALL(pattern.get_first(), sub_984240, true);
+
+        pattern = hook::pattern("E8 ? ? ? ? 83 F8 03 77 ? FF 24 85 ? ? ? ? 6A 01 68 E8 EC 3B 01");
+        injector::MakeCALL(pattern.get_first(), sub_984240, true);
+
+        pattern = hook::pattern("E8 ? ? ? ? 83 F8 03 0F 87 ? ? ? ? FF 24 85 ? ? ? ? 68 B4 EC 3B 01");
+        injector::MakeCALL(pattern.get_first(), sub_984240, true);
     }
 
     {
@@ -974,7 +1096,7 @@ CEXP void InitializeASI()
 {
     std::call_once(CallbackHandler::flag, []()
     {
-        CallbackHandler::RegisterCallback(Init, hook::pattern("F3 0F 5C 15 ? ? ? ? F3 0F 59 E5"));
+        CallbackHandler::RegisterCallbackAtGetSystemTimeAsFileTime(Init, hook::pattern("F3 0F 5C 15 ? ? ? ? F3 0F 59 E5"));
     });
 }
 

@@ -7,7 +7,7 @@ hook::pattern MenuPattern, MenuPattern15625, RsSelectDevicePattern, CDarkelDrawM
 hook::pattern DrawHudHorScalePattern, DrawHudVerScalePattern, CSpecialFXRender2DFXsPattern, CSceneEditDrawPattern, sub61DEB0Pattern;
 hook::pattern MenuPattern1, MenuPattern2, MenuPattern3, MenuPattern4, MenuPattern5, MenuPattern6, MenuPattern7, MenuPattern8, MenuPattern9, MenuPattern10, MenuPattern11;
 hook::pattern ResolutionPattern0, ResolutionPattern1, ResolutionPattern2, ResolutionPattern3, ResolutionPattern4, ResolutionPattern5;
-hook::pattern CRadarPattern, BordersPattern;
+hook::pattern CRadarHorScalePattern, CRadarVerScalePattern, BordersPattern;
 uint32_t* dwGameLoadState;
 float* fCRadarRadarRange;
 uint32_t funcCCameraAvoidTheGeometryJmp;
@@ -87,7 +87,10 @@ void GetPatterns()
     sub61DEB0Pattern = hook::pattern(pattern_str(0xD8, 0x0D, to_bytes(dword_temp))); //0x592969
 
     dword_temp = *hook::pattern("D8 0D ? ? ? ? D8 0D ? ? ? ? DD DA D9 00 D8 CA").count(1).get(0).get<uint32_t*>(2);
-    CRadarPattern = hook::pattern(pattern_str(0xD8, 0x0D, to_bytes(dword_temp))); //0x5F7148
+    CRadarHorScalePattern = hook::pattern(pattern_str(0xD8, 0x0D, to_bytes(dword_temp))); //0x5F7148
+
+    dword_temp = *hook::pattern("D8 0D ? ? ? ? DD D9 D9 05 ? ? ? ? D8 C9 DD DA D9 40 04").count(1).get(0).get<uint32_t*>(2);
+    CRadarVerScalePattern = hook::pattern(pattern_str(0xD8, 0x0D, to_bytes(dword_temp))); //0x5F7158
 }
 
 void GetMemoryAddresses()
@@ -340,18 +343,43 @@ void FixHUD()
         injector::WriteMemory(p15625, &fWideScreenWidthScaleDown, true);
     }
 
-    auto pattern = hook::pattern("D8 0D ? ? ? ? 89 44 24 08 50 D8 0D ? ? ? ? DA 6C 24 0C"); //0x48E363
-    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //sniper scope border @Render2dStuff
+    //sniper scope and rocketlauncher borders @Render2dStuff
+    auto pattern = hook::pattern("D8 0D ? ? ? ? 89 44 24 04 50 D8 0D ? ? ? ? DA 6C 24 08"); //0x48E1E2, 0x48E29C
+    injector::WriteMemory(pattern.count(2).get(0).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //rocketlauncher top border
+    injector::WriteMemory(pattern.count(2).get(1).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //sniper scope top border
+    pattern = hook::pattern("D8 0D ? ? ? ? 89 54 24 10 D8 0D ? ? ? ? DA 44 24 10"); //0x48E256
+    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //rocketlauncher bottom border
+    pattern = hook::pattern("D8 0D ? ? ? ? 89 4C 24 10 D8 0D ? ? ? ? DA 44 24 10"); //0x48E30F
+    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //sniper scope bottom border
+    pattern = hook::pattern("D8 0D ? ? ? ? 89 44 24 08 50 D8 0D ? ? ? ? DA 6C 24 0C"); //0x48E363
+    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //sniper scope & rocketlauncher left border
     pattern = hook::pattern("D8 0D ? ? ? ? 89 54 24 0C FF 35 ? ? ? ? D8 0D ? ? ? ? 50 DA 44 24 14"); //0x48E3CC
-    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true);
-    pattern = hook::pattern("D8 0D ? ? ? ? D8 0D ? ? ? ? 50 D9 1C 24 E8 ? ? ? ? 59 59");
-    injector::WriteMemory(pattern.count(2).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //0x48DC09
-    injector::WriteMemory(pattern.count(2).get(1).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //48DCDB
+    injector::WriteMemory(pattern.count(1).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //sniper scope & rocketlauncher right border
+
+    //loading island screen text
+    pattern = hook::pattern("D8 0D ? ? ? ? D8 0D ? ? ? ? 50 D9 1C 24 DB 05"); //0x48DBF3, 0x48DCC5
+    injector::WriteMemory(pattern.count(2).get(0).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //font height
+    injector::WriteMemory(pattern.count(2).get(1).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //font height
+    pattern = hook::pattern("D8 0D ? ? ? ? D8 0D ? ? ? ? 50 D9 1C 24 E8 ? ? ? ? 59 59"); //0x48DC09, 0x48DCDB
+    injector::WriteMemory(pattern.count(2).get(0).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //font width
+    injector::WriteMemory(pattern.count(2).get(1).get<uint32_t>(2), &fWideScreenWidthScaleDown, true); //font width
+    pattern = hook::pattern("D8 0D ? ? ? ? D8 0D ? ? ? ? DB 05 ? ? ? ? DE E1"); //0x48DC36, 0x48DCFF
+    injector::WriteMemory(pattern.count(2).get(0).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //bottom screen offset
+    injector::WriteMemory(pattern.count(2).get(1).get<uint32_t>(2), &fWideScreenHeightScaleDown, true); //bottom screen offset
+    //right offsets would require injecting code, since they were compiled as 1 byte addition instruction
+    //pattern = hook::pattern("83 C3 EC 89 9D"); //0x48DC54, 0x48DD1D
 
     for (size_t i = 0; i < DrawHudHorScalePattern.size(); i++)
     {
         uint32_t* p15625 = DrawHudHorScalePattern.get(i).get<uint32_t>(2);
         injector::WriteMemory(p15625, &fWideScreenWidthScaleDown, true);
+    }
+
+    //this is still preferred, as original game uses PS2 virtual Y res of 448.0f, which overstretches HUD
+    for (size_t i = 0; i < DrawHudVerScalePattern.size(); i++)
+    {
+        uint32_t* p15625 = DrawHudVerScalePattern.get(i).get<uint32_t>(2);
+        injector::WriteMemory(p15625, &fWideScreenHeightScaleDown, true);
     }
 
     pattern = hook::pattern("50 D8 0D ? ? ? ? D8 0D ? ? ? ? D9 1C 24 E8"); // radio text
@@ -367,10 +395,16 @@ void FixHUD()
 
     //injector::WriteMemory(0x4F6D90 + 0x5DC + 0x2, &fWideScreenWidthScaleDown, true); //CClouds::Render ??
 
-    for (size_t i = 0; i < CRadarPattern.size(); i++)
+    for (size_t i = 0; i < CRadarHorScalePattern.size(); i++)
     {
-        uint32_t* p15625 = CRadarPattern.get(i).get<uint32_t>(2);
+        uint32_t* p15625 = CRadarHorScalePattern.get(i).get<uint32_t>(2);
         injector::WriteMemory(p15625, &fWideScreenWidthScaleDown, true);
+    }
+
+    for (size_t i = 0; i < CRadarVerScalePattern.size(); i++)
+    {
+        uint32_t* p15625 = CRadarVerScalePattern.get(i).get<uint32_t>(2);
+        injector::WriteMemory(p15625, &fWideScreenHeightScaleDown, true);
     }
 
     //static float fTBW = 350.0f;
@@ -453,7 +487,7 @@ void ApplyIniOptions()
     {
         for (size_t i = 0; i < DrawHudHorScalePattern.size(); i++)
         {
-            if (i > 2 && i != 5 && i != 6 && i != 7 && i != 8 && i != 60 && i != 65 && i != 81) //0 1 2 - crosshair /65 - subs
+            if (i > 2 && i != 5 && i != 6 && i != 7 && i != 8 && i != 60 && i != 65 && i != 81) //0 1 2 - crosshair / 5 6 7 8 - sniper scope / 60 - radar disc / 65 - subs / 81 - IntroTextLines
             {
                 uint32_t* pCustomScaleHor = DrawHudHorScalePattern.get(i).get<uint32_t>(2);
                 injector::WriteMemory(pCustomScaleHor, &fCustomWideScreenWidthScaleDown, true);
@@ -462,7 +496,7 @@ void ApplyIniOptions()
 
         for (size_t i = 0; i < DrawHudVerScalePattern.size(); i++)
         {
-            if (i > 2 && i != 5 && i != 6 && i != 7 && i != 8 && i != 57 && i != 60 && i != 73) //0 1 2 - crosshair / 60 - subs
+            if (i > 2 && i != 5 && i != 6 && i != 7 && i != 8 && i != 57 && i != 60 && i != 73) //0 1 2 - crosshair / 5 6 7 8 - sniper scope / 57 - radar disc / 60 - subs / 73 - IntroTextLines
             {
                 uint32_t* pCustomScaleVer = DrawHudVerScalePattern.get(i).get<uint32_t>(2);
                 injector::WriteMemory(pCustomScaleVer, &fCustomWideScreenHeightScaleDown, true);
@@ -493,7 +527,7 @@ void ApplyIniOptions()
 
     if (fRadarWidthScale && !bIVRadarScaling)
     {
-        uint32_t* p15625 = CRadarPattern.get(0).get<uint32_t>(2);
+        uint32_t* p15625 = CRadarHorScalePattern.get(0).get<uint32_t>(2);
         injector::WriteMemory(p15625, &fCustomRadarWidthScale, true);
 
         injector::WriteMemory(DrawHudHorScalePattern.get(60).get<uint32_t>(2), &fCustomRadarWidthScale, true);

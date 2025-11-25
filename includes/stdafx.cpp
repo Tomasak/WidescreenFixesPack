@@ -15,6 +15,83 @@ float AdjustFOV(float f, float ar, float base_ar)
     return std::round((2.0f * atan(((ar) / base_ar) * tan(f / 2.0f * ((float)M_PI / 180.0f)))) * (180.0f / (float)M_PI) * 100.0f) / 100.0f;
 }
 
+float CalculateWidescreenOffset(float fWidth, float fHeight, float fScaleToWidth, float fScaleToHeight, float fOffset, bool bScaleToActualRes)
+{
+    float fAspectRatio = fWidth / fHeight;
+
+    if (bScaleToActualRes)
+        return ((fWidth - fHeight * (fScaleToWidth / fScaleToHeight)) / 2.0f) + (fOffset / (fWidth / fScaleToWidth));
+    else
+        return ((fScaleToWidth / 2.0f) - ((fScaleToHeight / 2.0f) * fAspectRatio)) + fOffset;
+}
+
+std::optional<float> ParseWidescreenHudOffset(std::string_view input)
+{
+    if (input.empty())
+        return std::nullopt;
+
+    std::string str(input);
+
+    // Trim whitespace
+    str.erase(0, str.find_first_not_of(" \t\r\n"));
+    str.erase(str.find_last_not_of(" \t\r\n") + 1);
+
+    if (str.empty())
+        return std::nullopt;
+
+    // Case-insensitive "Auto" check
+    std::string lower = str;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "auto")
+        return std::nullopt;
+
+    // Try direct float conversion
+    {
+        char* end = nullptr;
+        float value = std::strtof(str.c_str(), &end);
+        if (end != str.c_str() && *end == '\0')
+            return value;
+    }
+
+    // Try "1280x720" format
+    {
+        int width = 0, height = 0;
+        if (sscanf_s(str.c_str(), "%dx%d", &width, &height) == 2 && width > 0)
+            return static_cast<float>(width);
+    }
+
+    // Try "16:9" format
+    {
+        float aspect1 = 0.0f, aspect2 = 0.0f;
+        if (sscanf_s(str.c_str(), "%f:%f", &aspect1, &aspect2) == 2 && aspect2 > 0.0f && aspect1 > 0.0f)
+        {
+            return aspect1 / aspect2;
+        }
+    }
+
+    // Try "21/9" format
+    {
+        float aspect1 = 0.0f, aspect2 = 0.0f;
+        if (sscanf_s(str.c_str(), "%f/%f", &aspect1, &aspect2) == 2 && aspect2 > 0.0f && aspect1 > 0.0f)
+        {
+            return aspect1 / aspect2;
+        }
+    }
+
+    return std::nullopt;
+}
+
+float ClampHudAspectRatio(float value, float screenAspect, float minAspect, float maxAspect)
+{
+    if (value < minAspect)
+        value = minAspect;
+    else if (value > maxAspect)
+        value = maxAspect;
+    if (value > screenAspect)
+        value = screenAspect;
+    return value;
+}
+
 void CreateThreadAutoClose(LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress, LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId)
 {
     CloseHandle(CreateThread(lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags, lpThreadId));
@@ -64,7 +141,7 @@ void GetResolutionsList(std::vector<std::string>& list)
         {
             for (auto iModeNum = 0; EnumDisplaySettings(NULL, iModeNum, &dm) != 0; iModeNum++)
             {
-                auto str = format("%dx%d", dm.dmPelsWidth, dm.dmPelsHeight);
+                auto str = std::format("{}x{}", dm.dmPelsWidth, dm.dmPelsHeight);
                 list.emplace_back(str);
             }
             monitorNum++;
@@ -108,33 +185,6 @@ uint32_t GetDesktopRefreshRate()
     rate = dm.dmDisplayFrequency;
 
     return rate;
-}
-
-std::string format(const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    std::vector<char> v(1024);
-    while (true)
-    {
-        va_list args2;
-        va_copy(args2, args);
-        int res = vsnprintf(v.data(), v.size(), fmt, args2);
-        if ((res >= 0) && (res < static_cast<int>(v.size())))
-        {
-            va_end(args);
-            va_end(args2);
-            return std::string(v.data());
-        }
-        size_t size;
-        if (res < 0)
-            size = v.size() * 2;
-        else
-            size = static_cast<size_t>(res) + 1;
-        v.clear();
-        v.resize(size);
-        va_end(args2);
-    }
 }
 
 uint32_t crc32(uint32_t crc, const void* buf, size_t size)

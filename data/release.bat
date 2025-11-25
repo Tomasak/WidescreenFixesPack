@@ -28,25 +28,6 @@ if errorlevel 1 (
 )
 
 rem Additional files
-FOR /R ".\" %%F IN (*.wrapper) DO (
-findstr /c:"FPSLimit" "%%F" >nul 2>&1
-if errorlevel 1 (
-        findstr /c:"SetVertexShaderConstantHook" "%%F" >nul 2>&1
-        if errorlevel 1 (
-            echo String not found...
-        ) else (
-        SET filepath=%%F
-        SET dll=!filepath:.wrapper=.dll!
-        ECHO !dll!
-        7za e -so "..\d3d8.zip" *.dll -r > !dll!
-)
-) else (
-   SET filepath=%%F
-   SET dll=!filepath:.wrapper=.dll!
-   ECHO !dll!
-   7za e -so "..\d3d9.zip" *.dll -r > !dll!
-)
-)
 
 rem Manhunt Widescreen Fix
 copy /b/v/y "..\source\Manhunt.WidescreenFix\bin\Manhunt.WidescreenFix.ini" ".\Manhunt.WidescreenFix\scripts\Manhunt.WidescreenFix.ini"
@@ -59,7 +40,33 @@ rem dgVoodoo
 7za e -so "..\dgVoodoo2.zip" "MS\x86\D3DImm.dll" > ".\KnightRider2.WidescreenFix\D3DImm.dll"
 
 7za e -so "..\dgVoodoo2.zip" "MS\x86\D3D8.dll" > ".\SplinterCell.WidescreenFix\system\d3d8.dll"
-7za e -so "..\dgVoodoo2.zip" "MS\x86\D3D8.dll" > ".\SplinterCellPandoraTomorrow.WidescreenFix\offline\system\d3d8.dll"
+
+rem Xidi
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\Condemned.WidescreenFix\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\Scarface.FusionFix\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\SplinterCell.WidescreenFix\system\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\SplinterCellPandoraTomorrow.WidescreenFix\system\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\SplinterCellChaosTheory.WidescreenFix\system\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\SplinterCellDoubleAgent.WidescreenFix\SCDA-Offline\System\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/dinput8.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\SplinterCellConviction.FusionMod\src\system\" -y
+7za e "..\xidi.zip" "Xidi-*/Win32/winmm.dll" "Xidi-*/Win32/Xidi.32.dll" -o".\KingKong.WidescreenFix\" -y
+
+rem dxwrapper
+7za e "..\dxwrapper.zip" "dxwrapper.asi" -o".\Scarface.FusionFix\scripts\" -y
+7za e "..\dxwrapper.zip" "dxwrapper.asi" -o".\TonyHawksProSkater4.WidescreenFix\Game\scripts\" -y
+7za e "..\dxwrapper.zip" "dxwrapper.asi" -o".\TheSuffering.WidescreenFix\scripts\" -y
+7za e "..\dxwrapper.zip" "dxwrapper.asi" -o".\ThePunisher.WidescreenFix\scripts\" -y
+7za e "..\dxwrapper.zip" "dxwrapper.asi" -o".\MaxPayne.WidescreenFix\scripts\" -y
+
+rem dxwrapper-scda
+7za e "..\dxwrapper-scda.zip" "dxwrapper.dll" -o".\SplinterCellDoubleAgent.WidescreenFix\SCDA-Offline\System\scripts\" -y
+move /Y ".\SplinterCellDoubleAgent.WidescreenFix\SCDA-Offline\System\scripts\dxwrapper.dll" "dxwrapper.asi"
+
+7za e "..\dxwrapper-scda.zip" "dxwrapper.dll" -o".\KingKong.WidescreenFix\scripts\" -y
+move /Y ".\KingKong.WidescreenFix\scripts\dxwrapper.dll" "dxwrapper.asi"
+
+rem DSOAL
+7za e "..\DSOAL.7z" "DSOAL+HRTF/Win32/dsound.dll" "DSOAL+HRTF/Win32/dsoal-aldrv.dll" -o".\MaxPayne.WidescreenFix\" -y
 
 rem Creating archives
 

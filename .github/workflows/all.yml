@@ -21,7 +21,7 @@ jobs:
 
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         submodules: recursive
 
@@ -29,6 +29,7 @@ jobs:
       uses: ./.github/workflows/build_all
       with:
         project: ${{ inputs.project }}
+        sccompile_password: ${{ secrets.SCCOMPILE_PASSWORD }}
 
     - name: GTA SA The Definitive Edition Fusion Mod
       uses: ./.github/workflows/release_tag
@@ -84,7 +85,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         tag_list: ${{ format('{0},{1}', github.event.inputs.tag_list, inputs.tag_list) }}
         tag: gtavcspsp
-        artifacts: data/Archives/GTAVCS.PPSSPP.WidescreenFix.zip, data/Archives/GTAVCS.PPSSPP.Project2DFX.zip, data/Archives/GTAVCS.PPSSPP.ImVehLM.zip
+        artifacts: data/Archives/GTAVCS.PPSSPP.WidescreenFix.zip, data/Archives/GTAVCS.PPSSPP.Project2DFX.zip, data/Archives/GTAVCS.PPSSPP.ImVehLM.zip, data/Archives/GTAVCS.PPSSPP.GamepadIcons.zip
 
     - name: Grand Theft Auto Liberty City Stories Widescreen Fix [PCSX2F]
       uses: ./.github/workflows/release_tag
@@ -709,6 +710,14 @@ jobs:
         tag_list: ${{ format('{0},{1}', github.event.inputs.tag_list, inputs.tag_list) }}
         tag: sonicheroes
         artifacts: data/Archives/SonicHeroes.WidescreenFix.zip
+
+    - name: Red Dead Redemption Fusion Mod
+      uses: ./.github/workflows/release_tag
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag_list: ${{ format('{0},{1}', github.event.inputs.tag_list, inputs.tag_list) }}
+        tag: rdr
+        artifacts: data/Archives/RedDeadRedemption.FusionMod.zip
 
     - name: Resident Evil 0 Fusion Fix
       uses: ./.github/workflows/release_tag

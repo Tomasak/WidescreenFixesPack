@@ -7,7 +7,7 @@ workspace "WidescreenFixesPack"
    buildlog ("build/log/%{prj.name}.log")
    cppdialect "C++latest"
    include "makefile.lua"
-   buildoptions { "/Zc:__cplusplus" }
+   buildoptions { "/Zc:__cplusplus /utf-8" }
    flags { "MultiProcessorCompile" }
    
    kind "SharedLib"
@@ -24,7 +24,7 @@ workspace "WidescreenFixesPack"
    defines { "rsc_FileDescription=\"https://thirteenag.github.io/wfp\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/WidescreenFixesPack\"" }
    
-   files { "source/%{prj.name}/*.cpp" }
+   files { "source/%{prj.name}/*.h", "source/%{prj.name}/*.cpp", "source/%{prj.name}/*.hxx", "source/%{prj.name}/*.ixx" }
    files { "data/%{prj.name}/**" }
    files { "Resources/*.rc" }
    files { "external/hooking/Hooking.Patterns.h", "external/hooking/Hooking.Patterns.cpp" }
@@ -184,11 +184,6 @@ workspace "WidescreenFixesPack"
       end
       targetdir ("data/%{prj.name}/" .. scriptspath)
    end
-   
-   function add_asmjit()
-      files { "external/asmjit/src/**.h", "external/asmjit/src/**.cpp" }
-      includedirs { "external/asmjit/src/asmjit" }
-   end
 
    function add_kananlib()
       defines { "BDDISASM_HAS_MEMSET", "BDDISASM_HAS_VSNPRINTF" }
@@ -233,13 +228,13 @@ jobs:
    end
 
    vpaths {
-      ["source"] = { "source/**.*" },
-      ["ini"] = { "data/**.ini" },
-      ["devdata/*"] = { "data/*" },
-      ["data"] = { "data/**.cfg", "data/**.dat", "data/**.png", "data/**.ual", "data/**.x64ual", "data/**.dll" },
-      ["resources/*"] = { "./resources/*" },
-      ["includes/*"] = { "./includes/*" },
-      ["external/*"] = "./external/*",
+      ["source"]       = { "source/**.*" },
+      ["ini"]          = { "data/**.ini" },
+      ["data"]         = { "data/**.cfg", "data/**.dat", "data/**.png", "data/**.ual", "data/**.x64ual", "data/**.dll", "data/**.asi" },
+      ["resources/*"]  = { "resources/*" },
+      ["includes/*"]   = { "includes/*" },
+      ["external/*"]   = { "external/*" },
+      ["devdata/*"]    = { "data/*" },
    }
 
    filter "configurations:Debug*"
@@ -251,19 +246,6 @@ jobs:
       optimize "On"
 
 group "Win64"
-project "Assembly64.TestApp"
-   kind "ConsoleApp"
-   targetextension ".exe"
-   platforms { "Win64" }
-   architecture "x64"
-   setpaths("./data/%{prj.name}/", "%{prj.name}.exe", "")
-
-project "Assembly64.TestAsi"
-   platforms { "Win64" }
-   architecture "x64"
-   add_asmjit()
-   setpaths("./data/Assembly64.TestApp/", "Assembly64.TestApp.exe", "")
-
 project "FarCry64.WidescreenFix"
    platforms { "Win64" }
    architecture "x64"
@@ -275,17 +257,17 @@ group "Win64/GrandTheftAuto"
 project "GTA3DE.FusionMod"
    platforms { "Win64" }
    architecture "x64"
-   add_asmjit()
+   add_kananlib()
    setpaths("Z:/WFP/Games/Grand Theft Auto The Definitive Edition/GTA III - Definitive Edition/", "Gameface/Binaries/Win64/LibertyCity.exe", "Gameface/Binaries/Win64/scripts/")
 project "GTAVCDE.FusionMod"
    platforms { "Win64" }
    architecture "x64"
-   add_asmjit()
+   add_kananlib()
    setpaths("Z:/WFP/Games/Grand Theft Auto The Definitive Edition/GTA Vice City - Definitive Edition/", "Gameface/Binaries/Win64/ViceCity.exe", "Gameface/Binaries/Win64/scripts/")
 project "GTASADE.FusionMod"
    platforms { "Win64" }
    architecture "x64"
-   add_asmjit()
+   add_kananlib()
    setpaths("Z:/WFP/Games/Grand Theft Auto The Definitive Edition/GTA San Andreas - Definitive Edition/", "Gameface/Binaries/Win64/SanAndreas.exe", "Gameface/Binaries/Win64/scripts/")
 group "Win64"
 
@@ -300,6 +282,12 @@ project "SpyroReignitedTrilogy.WidescreenFix"
    platforms { "Win64" }
    architecture "x64"
    setpaths("Z:/WFP/Games/Spyro Reignited Trilogy/", "Falcon/Binaries/Win64/Spyro-Win64-Shipping.exe", "Falcon/Binaries/Win64/scripts/")
+
+project "RedDeadRedemption.FusionMod"
+   add_kananlib()
+   platforms { "Win64" }
+   architecture "x64"
+   setpaths("Z:/WFP/Games/Red Dead Redemption/", "RDR.exe", "plugins/")
 group ""
 
 group "Win32"
@@ -313,6 +301,10 @@ project "ColdFear.WidescreenFix"
    setpaths("Z:/WFP/Games/ColdFear/", "ColdFear_retail.exe")
 
 project "Condemned.WidescreenFix"
+   includedirs { "external/injector/minhook/include" }
+   files { "external/injector/minhook/include/*.h", "external/injector/minhook/src/**.h", "external/injector/minhook/src/**.c" }
+   includedirs { "external/injector/utility" }
+   files { "external/injector/utility/FunctionHookMinHook.hpp", "external/injector/utility/FunctionHookMinHook.cpp" }
    setpaths("Z:/WFP/Games/Condemned Criminal Origins/", "Condemned.exe")
 
 project "DeerAvenger4.WidescreenFix"
@@ -350,8 +342,8 @@ project "GTAVC.WidescreenFix"
 project "GTASA.WidescreenFix"
    files { "includes/GTA/*.h", "includes/GTA/*.cpp" }
    setpaths("Z:/WFP/Games/Grand Theft Auto/GTA San Andreas/", "gta_sa.exe")
-project "GTASA.UWP.Test"
-   setpaths("Z:/WFP/Games/GTASAUWP/", "GTASA.exe")
+--project "GTASA.UWP.Test"
+--   setpaths("Z:/WFP/Games/GTASAUWP/", "GTASA.exe")
 group "Win32"
 
 project "Gun.WidescreenFix"
@@ -364,7 +356,15 @@ project "JustCause.WidescreenFix"
    setpaths("Z:/WFP/Games/Just Cause/", "JustCause.exe")
 
 project "KingKong.WidescreenFix"
-   setpaths("Z:/WFP/Games/King Kong/", "CheckApplication.exe")
+   prebuildcommands {
+      "for /R \"../source/%{prj.name}/\" %%f in (*.ps) do (\"../includes/dxsdk/lib/x86/fxc.exe\" /T ps_3_0 /nologo /E main /Fo \"../source/%{prj.name}/%%~nf.pso\" %%f)",
+      "for /R \"../source/%{prj.name}/\" %%f in (*.vs) do (\"../includes/dxsdk/lib/x86/fxc.exe\" /T vs_3_0 /nologo /E main /Fo \"../source/%{prj.name}/%%~nf.vso\" %%f)"
+   }
+   files { "source/%{prj.name}/*.ps", "source/%{prj.name}/*.vs", "source/%{prj.name}/*.rc" }
+   defines { "IDR_BLURPS=200" }
+   defines { "IDR_BLURVS=201" }
+   defines { "IDR_REMANANCEPS=202" }
+   setpaths("Z:/WFP/Games/King Kong Gamers Edition/", "KingKong8.exe")
 
 project "KnightRider.WidescreenFix"
    setpaths("Z:/WFP/Games/Knight Rider/", "Knight Rider.exe")
@@ -390,7 +390,17 @@ project "Manhunt.WidescreenFix"
    setpaths("Z:/WFP/Games/Manhunt/", "manhunt.exe")
 
 group "Win32/MaxPayne"
+project "MaxPayne.MSVCP60Wrapper"
+   setpaths("Z:/WFP/Games/Max Payne/Max Payne/", "MaxPayne.exe", "")
+   targetdir "data/MaxPayne.WidescreenFix"
+   targetname "MSVCP60"
+   targetextension ".dll"
+   files { "source/%{prj.name}/*.def" }
+   files { "source/%{prj.name}/*.rc" }
+   files { "source/%{prj.name}/MemoryModule.h", "source/%{prj.name}/MemoryModule.c" }
 project "MaxPayne.WidescreenFix"
+   dependson { "MaxPayne.MSVCP60Wrapper" }
+   debugargs { " -skipstartup -window -developer -screenshot" }
    setpaths("Z:/WFP/Games/Max Payne/Max Payne/", "MaxPayne.exe")
 project "MaxPayne2.WidescreenFix"
    setpaths("Z:/WFP/Games/Max Payne/Max Payne 2 The Fall of Max Payne/", "MaxPayne2.exe")
@@ -472,7 +482,11 @@ project "SplinterCellDoubleAgent.WidescreenFix"
    files { "textures/SCDA/icon.rc" }
    defines { "IDR_SCDAICON=200" }
 project "SplinterCellPandoraTomorrow.WidescreenFix"
-   setpaths("Z:/WFP/Games/Splinter Cell/Splinter Cell Pandora Tomorrow/", "offline/system/SplinterCell2.exe", "offline/system/scripts/")
+   prebuildcommands { "for /R \"../source/%{prj.name}/\" %%f in (*.fx) do (\"../includes/dxsdk/lib/x86/fxc.exe\" /Tps_1_1 /LD /Ewaterblend /Fo \"../source/%{prj.name}/%%~nf.fxo\" %%f)" }
+   files { "source/%{prj.name}/*.fx", "source/%{prj.name}/*.rc" }
+   defines { "IDR_WATER_BLEND=200" }
+   debugargs { "-uplay_steam_mode" }
+   setpaths("Z:/WFP/Games/Splinter Cell/Splinter Cell Pandora Tomorrow/", "system/SplinterCell2.exe", "system/scripts/")
 group "Win32"
 
 project "StreetRacingSyndicate.WidescreenFix"

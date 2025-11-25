@@ -1,18 +1,20 @@
 ![condemned](https://thirteenag.github.io/screens/condemned/main2.jpg)
 
-![](https://habrastorage.org/webt/ow/yy/mg/owyymgpibfqzfbwyf_iqoiqrede.png) Fixed Resolution (Config.exe)
+$${\color{green}✔}$$  Fixed Resolution (Config.exe)
 
-![](https://habrastorage.org/webt/ow/yy/mg/owyymgpibfqzfbwyf_iqoiqrede.png) Fixed Aspect Ratio (Ultra-Wide)
+$${\color{green}✔}$$  Fixed Aspect Ratio (Ultra-Wide)
 
-![](https://habrastorage.org/webt/ow/yy/mg/owyymgpibfqzfbwyf_iqoiqrede.png) Fixed HUD (Ultra-Wide)
+$${\color{green}✔}$$  Fixed HUD (Ultra-Wide)
 
-![](https://habrastorage.org/webt/d_/eg/ym/d_egymd6w_tem2erocab-e9ikna.png) Added an option to fix stretched menu
+$${\color{green}✔}$$  Added gamepad support (via [Xidi](https://github.com/samuelgr/Xidi))
 
-![](https://habrastorage.org/webt/d_/eg/ym/d_egymd6w_tem2erocab-e9ikna.png) Added an option to fix low framerate
+$${\color{blue}ⓘ}$$ Added an option to fix stretched menu
 
-![](https://habrastorage.org/webt/d_/eg/ym/d_egymd6w_tem2erocab-e9ikna.png) Added an option to fix issue when controls aren't saved
+$${\color{blue}ⓘ}$$ Added an option to fix low framerate
 
-![](https://habrastorage.org/webt/d_/eg/ym/d_egymd6w_tem2erocab-e9ikna.png) Added an option to make windowed mode borderless
+$${\color{blue}ⓘ}$$ Added an option to fix issue when controls aren't saved
+
+$${\color{blue}ⓘ}$$ Added an option to make windowed mode borderless
 
     Installation:
         Download and extract the archive to the game directory, where the exe is located.
@@ -28,7 +30,7 @@ From PCGW:
 
 I compared the files and made a separate archive with missing/different files. That way there's no need to download and replace large files.
 Installation: 
-- Download ![Condemned.MissingSteamFilesFix.zip](https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/condemned/Condemned.MissingSteamFilesFix.zip) for a full package **or** ![Condemned.MissingSteamFilesFix.Lite.zip](https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/condemned/Condemned.MissingSteamFilesFix.Lite.zip) if you don't care about having retail TheDark_4-5-04.bik and FinalCreds.bik.
+- Download [Condemned.MissingSteamFilesFix.zip](https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/condemned/Condemned.MissingSteamFilesFix.zip) for a full package **or** [Condemned.MissingSteamFilesFix.Lite.zip](https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/condemned/Condemned.MissingSteamFilesFix.Lite.zip) if you don't care about having retail TheDark_4-5-04.bik and FinalCreds.bik.
 - Unpack everything to root directory, replacing **default.archcfg** in the process.
 
 Widescreen fix also contains **default.archcfg**, but they are identical between archives. It is used to make the game load arch00 archives without needing to replace them.
